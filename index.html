@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>登録チャンネルだけ</title>
+<meta name="theme-color" content="#0f0f0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Subs">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ff0033'/%3E%3Cpath d='M26 20l18 12-18 12z' fill='white'/%3E%3C/svg%3E">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--bg:#fff;--fg:#0f0f0f;--sub:#606060;--card:#f2f2f2;--line:#e5e5e5;--accent:#ff0033;--btn:#f2f2f2;--btnOn:#0f0f0f;--btnOnFg:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0f0f0f;--fg:#f1f1f1;--sub:#aaa;--card:#272727;--line:#303030;--btn:#272727;--btnOn:#f1f1f1;--btnOnFg:#0f0f0f}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;-webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;border-bottom:1px solid var(--line)}
+.row{display:flex;align-items:center;gap:8px}
+.row+.row{margin-top:8px}
+h1{font-size:18px;margin:0;flex:1;display:flex;align-items:center;gap:8px}
+h1 i{display:inline-block;width:26px;height:18px;border-radius:5px;background:var(--accent);position:relative}
+h1 i:after{content:"";position:absolute;left:10px;top:5px;border-left:7px solid #fff;border-top:4px solid transparent;border-bottom:4px solid transparent}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+.icon{background:transparent;width:40px;height:40px;border-radius:50%;font-size:20px;display:grid;place-items:center}
+.icon:active{background:var(--btn)}
+.icon:disabled{opacity:.4}
+.seg{display:flex;background:var(--btn);border-radius:10px;padding:3px;flex:1}
+.seg button{flex:1;background:transparent;padding:7px 0;border-radius:8px;font-size:14px;font-weight:600}
+.seg button.on{background:var(--btnOn);color:var(--btnOnFg)}
+.pill{background:var(--btn);padding:9px 14px;border-radius:10px;font-size:14px;font-weight:600;white-space:nowrap}
+#status{font-size:12px;color:var(--sub);padding:6px 16px 0;min-height:18px}
+#feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;padding:12px 16px calc(env(safe-area-inset-bottom) + 24px)}
+.card{background:transparent;text-align:left;padding:0;display:block;width:100%}
+.thumb{aspect-ratio:16/9;background:var(--card);border-radius:12px;overflow:hidden}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.meta{padding:8px 2px 0}
+.t{font-size:15px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.s{font-size:13px;color:var(--sub);margin-top:3px}
+#empty{padding:48px 24px;text-align:center;color:var(--sub);line-height:1.8;display:none}
+#empty .pill{margin-top:12px;color:var(--fg)}
+#sentinel{height:1px}
+dialog{border:0;padding:0;background:var(--bg);color:var(--fg);border-radius:16px;width:min(560px,calc(100% - 24px));max-height:calc(100% - 24px)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg{padding:20px}
+.dlg h2{font-size:17px;margin:0 0 14px}
+label{display:block;font-size:13px;color:var(--sub);margin:14px 0 6px}
+input[type=text],select{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.check{display:flex;gap:10px;align-items:center;color:var(--fg);font-size:15px}
+.check input{width:20px;height:20px}
+.hint{font-size:12px;color:var(--sub);line-height:1.6;margin-top:6px;word-break:break-all}
+.hint code{background:var(--card);padding:1px 5px;border-radius:5px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+.primary{background:var(--btnOn);color:var(--btnOnFg)}
+.danger{color:var(--accent)}
+#player{width:min(960px,calc(100% - 16px))}
+#player .frame{aspect-ratio:16/9;background:#000}
+#player iframe{width:100%;height:100%;border:0;display:block}
+#player .bar{display:flex;gap:8px;align-items:center;padding:12px}
+#player .bar .t{flex:1;font-size:14px}
+a.pill{color:var(--fg);text-decoration:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1><i></i>登録チャンネル</h1>
+    <button class="icon" id="btnShuffle" title="シャッフル" aria-label="シャッフル">🔀</button>
+    <button class="icon" id="btnRefresh" title="更新" aria-label="更新">⟳</button>
+    <button class="icon" id="btnSettings" title="設定" aria-label="設定">⚙︎</button>
+  </div>
+  <div class="row">
+    <div class="seg" role="tablist">
+      <button data-mode="recent">新着順</button>
+      <button data-mode="random">ランダム</button>
+    </div>
+  </div>
+</header>
+<div id="status"></div>
+<div id="empty"></div>
+<main id="feed"></main>
+<div id="sentinel"></div>
+
+<dialog id="settings"><form method="dialog" class="dlg">
+  <h2>設定</h2>
+  <label for="cid">OAuth クライアントID</label>
+  <input type="text" id="cid" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+  <div class="hint">Google Cloud の OAuth クライアントの「承認済みの JavaScript 生成元」に <code id="origin"></code> を登録してください。</div>
+  <label for="cap">1チャンネルあたりの取得本数</label>
+  <select id="cap">
+    <option value="50">最近の50本（軽い）</option>
+    <option value="200">200本まで</option>
+    <option value="1000">1000本まで</option>
+    <option value="0">すべて（初回は時間がかかります）</option>
+  </select>
+  <label>ランダム表示</label>
+  <div class="check"><input type="checkbox" id="even"><span>チャンネルごとに均等に出す（動画の多いチャンネルばかりにならない）</span></div>
+  <div class="hint" id="info"></div>
+  <div class="actions">
+    <button class="pill primary" id="save" value="save">保存</button>
+    <button class="pill" value="cancel">閉じる</button>
+    <button class="pill danger" id="wipe" type="button">保存データを削除</button>
+    <button class="pill" id="logout" type="button">ログアウト</button>
+  </div>
+</form></dialog>
+
+<dialog id="player">
+  <div class="frame"><iframe id="pframe" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>
+  <div class="bar">
+    <div class="t" id="ptitle"></div>
+    <a class="pill" id="plink" target="_blank" rel="noopener">YouTubeで開く</a>
+    <button class="pill" id="pclose">閉じる</button>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const state = {
+  mode: LS.get('mode', 'random'),
+  clientId: LS.get('clientId', ''),
+  cap: LS.get('cap', 1000),
+  even: LS.get('even', true),
+  subs: LS.get('subs', []),
+  feed: [], shown: 0, token: null, tokenExp: 0, busy: false
+};
+try { const t = JSON.parse(sessionStorage.getItem('tok') || 'null'); if (t) { state.token = t[0]; state.tokenExp = t[1]; } } catch {}
+
+/* ---------- IndexedDB（チャンネルごとの動画キャッシュ） ---------- */
+const db = (() => {
+  let p;
+  const open = () => p || (p = new Promise((res, rej) => {
+    const r = indexedDB.open('subsfeed', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('ch', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
+  const tx = (mode, fn) => open().then(d => new Promise((res, rej) => {
+    const t = d.transaction('ch', mode);
+    const req = fn(t.objectStore('ch'));
+    t.oncomplete = () => res(req ? req.result : undefined);
+    t.onerror = () => rej(t.error);
+  }));
+  return {
+    get: id => tx('readonly', s => s.get(id)),
+    put: v => tx('readwrite', s => s.put(v)),
+    all: () => tx('readonly', s => s.getAll()),
+    clear: () => tx('readwrite', s => s.clear())
+  };
+})();
+
+/* ---------- Google ログイン ---------- */
+function waitGis() {
+  return new Promise((res, rej) => {
+    let n = 0;
+    (function w() {
+      if (window.google && google.accounts && google.accounts.oauth2) return res();
+      if (++n > 100) return rej(new Error('Googleのログイン部品を読み込めませんでした。通信状況を確認してください。'));
+      setTimeout(w, 100);
+    })();
+  });
+}
+async function getToken() {
+  if (state.token && Date.now() < state.tokenExp - 60000) return state.token;
+  if (!state.clientId) throw new Error('先に設定（⚙︎）でクライアントIDを入力してください。');
+  await waitGis();
+  return new Promise((res, rej) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: state.clientId,
+      scope: 'https://www.googleapis.com/auth/youtube.readonly',
+      callback: r => {
+        if (r.error) return rej(new Error('ログインに失敗しました：' + r.error));
+        state.token = r.access_token;
+        state.tokenExp = Date.now() + r.expires_in * 1000;
+        try { sessionStorage.setItem('tok', JSON.stringify([state.token, state.tokenExp])); } catch {}
+        res(state.token);
+      },
+      error_callback: e => rej(new Error('ログインが完了しませんでした（' + (e && e.type || '不明') + '）'))
+    });
+    client.requestAccessToken({ prompt: '' });
+  });
+}
+
+/* ---------- YouTube Data API ---------- */
+async function api(path, params) {
+  const url = new URL('https://www.googleapis.com/youtube/v3/' + path);
+  for (const [k, v] of Object.entries(params)) if (v != null) url.searchParams.set(k, v);
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + state.token } });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    const err = new Error((e.error && e.error.message) || ('HTTP ' + r.status));
+    err.status = r.status;
+    err.reason = e.error && e.error.errors && e.error.errors[0] && e.error.errors[0].reason;
+    throw err;
+  }
+  return r.json();
+}
+async function fetchSubs() {
+  const out = []; let pageToken;
+  do {
+    const r = await api('subscriptions', {
+      part: 'snippet', mine: 'true', maxResults: 50, order: 'alphabetical', pageToken,
+      fields: 'nextPageToken,items(snippet(title,resourceId/channelId))'
+    });
+    for (const it of r.items || []) out.push({ id: it.snippet.resourceId.channelId, title: it.snippet.title });
+    pageToken = r.nextPageToken;
+  } while (pageToken);
+  return out;
+}
+// チャンネルのアップロード動画を1ページ（最大50本）取得。動画は [id, タイトル, 公開日時] の配列
+async function uploadsPage(chId, pageToken) {
+  try {
+    const r = await api('playlistItems', {
+      part: 'snippet,contentDetails', playlistId: 'UU' + chId.slice(2), maxResults: 50, pageToken,
+      fields: 'nextPageToken,items(snippet(title,resourceId/videoId),contentDetails/videoPublishedAt)'
+    });
+    return {
+      next: r.nextPageToken || null,
+      items: (r.items || [])
+        .filter(i => i.contentDetails && i.contentDetails.videoPublishedAt)
+        .map(i => [i.snippet.resourceId.videoId, i.snippet.title, Date.parse(i.contentDetails.videoPublishedAt)])
+    };
+  } catch (e) {
+    if (e.status === 404) return null; // 動画がないチャンネル
+    throw e;
+  }
+}
+async function updateChannel(ch, cap) {
+  const rec = (await db.get(ch.id)) || { id: ch.id, videos: [], next: null, complete: false };
+  rec.title = ch.title;
+  const known = new Set(rec.videos.map(v => v[0]));
+  const isNew = rec.videos.length === 0;
+  const fresh = []; let token;
+  // 新しい方から、既に持っている動画に当たるまで取得
+  while (true) {
+    const page = await uploadsPage(ch.id, token);
+    if (!page) { if (isNew) rec.complete = true; break; }
+    let stop = false;
+    for (const v of page.items) {
+      if (known.has(v[0])) { stop = true; break; }
+      known.add(v[0]); fresh.push(v);
+    }
+    token = page.next;
+    if (stop) break;
+    if (!token) { if (isNew) { rec.complete = true; rec.next = null; } break; }
+    if (fresh.length >= cap) { if (isNew) rec.next = token; break; }
+  }
+  rec.videos = fresh.concat(rec.videos);
+  // 取得上限を上げた場合など、続きの古い動画を追加取得
+  if (!rec.complete && rec.next && rec.videos.length < cap) {
+    token = rec.next;
+    while (token && rec.videos.length < cap) {
+      const page = await uploadsPage(ch.id, token);
+      if (!page) { token = null; break; }
+      for (const v of page.items) if (!known.has(v[0])) { known.add(v[0]); rec.videos.push(v); }
+      token = page.next;
+    }
+    rec.next = token || null;
+    if (!token) rec.complete = true;
+  }
+  await db.put(rec);
+}
+async function pool(items, n, fn) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (i < items.length) { const k = i++; await fn(items[k], k); }
+  });
+  await Promise.all(workers);
+}
+
+/* ---------- 更新 ---------- */
+async function refresh() {
+  if (state.busy) return;
+  state.busy = true; setBusy(true);
+  try {
+    await getToken();
+    status('登録チャンネルを取得中…');
+    const subs = await fetchSubs();
+    state.subs = subs; LS.set('subs', subs);
+    const cap = state.cap || Infinity;
+    let done = 0, failed = 0, fatal = null;
+    await pool(subs, 4, async ch => {
+      if (fatal) return;
+      try { await updateChannel(ch, cap); }
+      catch (e) {
+        if (e.status === 401 || e.reason === 'quotaExceeded' || e.reason === 'dailyLimitExceeded' || e.reason === 'rateLimitExceeded') fatal = e;
+        else failed++;
+      }
+      done++;
+      status(`動画を取得中… ${done} / ${subs.length} チャンネル`);
+      if (done % 20 === 0 && state.feed.length === 0) await buildFeed(); // 初回は途中経過も表示
+    });
+    LS.set('lastUpdate', Date.now());
+    await buildFeed();
+    if (fatal) {
+      if (fatal.status === 401) { state.token = null; throw new Error('ログインの有効期限が切れました。もう一度 ⟳ を押してください。'); }
+      throw new Error('今日のAPI無料枠を使い切りました。取得できた分だけ表示しています（枠は日本時間の16〜17時ごろにリセットされます。続きは翌日の更新で取得されます）。');
+    }
+    status(`${subs.length}チャンネル・${state.feed.length.toLocaleString()}本` + (failed ? `（${failed}チャンネルは取得できませんでした）` : ''));
+  } catch (e) {
+    status('⚠ ' + e.message);
+  } finally {
+    state.busy = false; setBusy(false);
+  }
+}
+
+/* ---------- 表示 ---------- */
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+async function buildFeed() {
+  const recs = await db.all();
+  const subIds = new Set(state.subs.map(s => s.id));
+  const chans = recs.filter(r => subIds.has(r.id) && r.videos.length);
+  const withCh = r => r.videos.map(v => [v[0], v[1], v[2], r.title]);
+  if (state.mode === 'recent') {
+    state.feed = chans.flatMap(withCh).sort((a, b) => b[2] - a[2]);
+  } else if (state.even) {
+    // ランダムにチャンネルを選び、その中からランダムに1本ずつ取り出す
+    const lists = chans.map(r => shuffle(withCh(r)));
+    const out = [];
+    while (lists.length) {
+      const k = Math.floor(Math.random() * lists.length);
+      out.push(lists[k].pop());
+      if (!lists[k].length) { lists[k] = lists[lists.length - 1]; lists.pop(); }
+    }
+    state.feed = out;
+  } else {
+    state.feed = shuffle(chans.flatMap(withCh));
+  }
+  state.shown = 0;
+  $('#feed').innerHTML = '';
+  renderMore();
+  updateEmpty();
+}
+function ago(ts) {
+  const s = (Date.now() - ts) / 1000;
+  for (const [n, l] of [[31536000, '年'], [2592000, 'か月'], [604800, '週間'], [86400, '日'], [3600, '時間'], [60, '分']])
+    if (s >= n) return Math.floor(s / n) + l + '前';
+  return 'たった今';
+}
+function renderMore() {
+  const feed = $('#feed');
+  const end = Math.min(state.shown + 24, state.feed.length);
+  const frag = document.createDocumentFragment();
+  for (let i = state.shown; i < end; i++) {
+    const [id, title, ts, ch] = state.feed[i];
+    const b = document.createElement('button');
+    b.className = 'card';
+    b.onclick = () => play(id, title);
+    const th = document.createElement('div'); th.className = 'thumb';
+    const img = document.createElement('img'); img.loading = 'lazy'; img.alt = '';
+    img.src = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+    th.append(img);
+    const m = document.createElement('div'); m.className = 'meta';
+    const t = document.createElement('div'); t.className = 't'; t.textContent = title;
+    const s = document.createElement('div'); s.className = 's'; s.textContent = `${ch} ・ ${ago(ts)}`;
+    m.append(t, s); b.append(th, m); frag.append(b);
+  }
+  feed.append(frag);
+  state.shown = end;
+}
+function updateEmpty() {
+  const el = $('#empty');
+  if (state.feed.length) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = '';
+  const p = document.createElement('div');
+  const b = document.createElement('button'); b.className = 'pill';
+  if (!state.clientId) {
+    p.textContent = 'はじめに設定でGoogleのクライアントIDを入力してください。';
+    b.textContent = '設定を開く'; b.onclick = openSettings;
+  } else {
+    p.textContent = '更新すると、Googleでログインして登録チャンネルの動画を取得します。';
+    b.textContent = 'ログインして取得'; b.onclick = refresh;
+  }
+  el.append(p, b);
+}
+function status(t) { $('#status').textContent = t || ''; }
+function setBusy(on) { $('#btnRefresh').disabled = on; }
+function setMode(m) {
+  state.mode = m; LS.set('mode', m);
+  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  $('#btnShuffle').style.visibility = m === 'random' ? 'visible' : 'hidden';
+}
+
+/* ---------- プレーヤー ---------- */
+function play(id, title) {
+  $('#pframe').src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&rel=0`;
+  $('#ptitle').textContent = title;
+  $('#plink').href = `https://www.youtube.com/watch?v=${id}`;
+  $('#player').showModal();
+}
+$('#pclose').onclick = () => $('#player').close();
+$('#player').addEventListener('close', () => { $('#pframe').src = 'about:blank'; });
+$('#player').addEventListener('click', e => { if (e.target === $('#player')) $('#player').close(); });
+
+/* ---------- 設定 ---------- */
+function openSettings() {
+  $('#cid').value = state.clientId;
+  $('#cap').value = String(state.cap);
+  $('#even').checked = state.even;
+  $('#origin').textContent = location.origin;
+  const lu = LS.get('lastUpdate', 0);
+  $('#info').textContent = lu ? '最終更新：' + new Date(lu).toLocaleString('ja-JP') : '';
+  $('#settings').showModal();
+}
+$('#settings').addEventListener('close', async () => {
+  if ($('#settings').returnValue !== 'save') return;
+  const cid = $('#cid').value.trim();
+  if (cid !== state.clientId) { state.token = null; try { sessionStorage.removeItem('tok'); } catch {} }
+  state.clientId = cid; LS.set('clientId', cid);
+  state.cap = Number($('#cap').value); LS.set('cap', state.cap);
+  state.even = $('#even').checked; LS.set('even', state.even);
+  await buildFeed();
+});
+$('#wipe').onclick = async () => {
+  if (!confirm('保存した動画データを削除しますか？（次回の更新で取得し直します）')) return;
+  await db.clear(); LS.set('subs', []); LS.set('lastUpdate', 0); state.subs = [];
+  $('#settings').close(); await buildFeed(); status('保存データを削除しました');
+};
+$('#logout').onclick = () => {
+  if (state.token && window.google && google.accounts && google.accounts.oauth2) google.accounts.oauth2.revoke(state.token, () => {});
+  state.token = null; try { sessionStorage.removeItem('tok'); } catch {}
+  status('ログアウトしました');
+};
+
+/* ---------- 起動 ---------- */
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { setMode(b.dataset.mode); buildFeed(); scrollTo(0, 0); });
+$('#btnShuffle').onclick = () => { buildFeed(); scrollTo(0, 0); };
+$('#btnRefresh').onclick = refresh;
+$('#btnSettings').onclick = openSettings;
+new IntersectionObserver(es => { if (es[0].isIntersecting && state.shown < state.feed.length) renderMore(); }, { rootMargin: '800px' }).observe($('#sentinel'));
+setMode(state.mode);
+buildFeed().then(() => {
+  const lu = LS.get('lastUpdate', 0);
+  if (state.feed.length) status(`${state.subs.length}チャンネル・${state.feed.length.toLocaleString()}本` + (lu ? `（最終更新 ${ago(lu)}）` : ''));
+});
+</script>
+</body>
+</html>
