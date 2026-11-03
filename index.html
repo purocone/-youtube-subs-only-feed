@@ -29,6 +29,10 @@ button{font:inherit;color:inherit;border:0;cursor:pointer}
 .seg button{flex:1;background:transparent;padding:7px 0;border-radius:8px;font-size:14px;font-weight:600}
 .seg button.on{background:var(--btnOn);color:var(--btnOnFg)}
 .pill{background:var(--btn);padding:9px 14px;border-radius:10px;font-size:14px;font-weight:600;white-space:nowrap}
+.chips{display:flex;gap:8px;overflow-x:auto;margin:8px -16px 0;padding:0 16px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{background:var(--btn);padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600;white-space:nowrap;flex:none}
+.chip.on{background:var(--btnOn);color:var(--btnOnFg)}
 #status{font-size:12px;color:var(--sub);padding:6px 16px 0;min-height:18px}
 #feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;padding:12px 16px calc(env(safe-area-inset-bottom) + 24px)}
 .card{background:transparent;text-align:left;padding:0;display:block;width:100%}
@@ -75,6 +79,7 @@ a.pill{color:var(--fg);text-decoration:none}
       <button data-mode="random">ランダム</button>
     </div>
   </div>
+  <div class="chips" id="chips" style="display:none"></div>
 </header>
 <div id="status"></div>
 <div id="empty"></div>
@@ -125,6 +130,8 @@ const state = {
   cap: LS.get('cap', 1000),
   even: LS.get('even', true),
   subs: LS.get('subs', []),
+  genre: LS.get('genre', ''),
+  cats: LS.get('cats', {}),
   feed: [], shown: 0, token: null, tokenExp: 0, busy: false
 };
 try { const t = JSON.parse(sessionStorage.getItem('tok') || 'null'); if (t) { state.token = t[0]; state.tokenExp = t[1]; } } catch {}
@@ -148,7 +155,9 @@ const db = (() => {
     get: id => tx('readonly', s => s.get(id)),
     put: v => tx('readwrite', s => s.put(v)),
     all: () => tx('readonly', s => s.getAll()),
-    clear: () => tx('readwrite', s => s.clear())
+    clear: () => tx('readwrite', s => s.clear()),
+    del: id => tx('readwrite', s => s.delete(id)),
+    keys: () => tx('readonly', s => s.getAllKeys())
   };
 })();
 
@@ -211,10 +220,10 @@ async function fetchSubs() {
   return out;
 }
 // チャンネルのアップロード動画を1ページ（最大50本）取得。動画は [id, タイトル, 公開日時] の配列
-async function uploadsPage(chId, pageToken) {
+async function uploadsPage(chId, kind, pageToken) {
   try {
     const r = await api('playlistItems', {
-      part: 'snippet,contentDetails', playlistId: 'UU' + chId.slice(2), maxResults: 50, pageToken,
+      part: 'snippet,contentDetails', playlistId: 'UU' + kind + chId.slice(2), maxResults: 50, pageToken,
       fields: 'nextPageToken,items(snippet(title,resourceId/videoId),contentDetails/videoPublishedAt)'
     });
     return {
@@ -228,15 +237,17 @@ async function uploadsPage(chId, pageToken) {
     throw e;
   }
 }
-async function updateChannel(ch, cap) {
-  const rec = (await db.get(ch.id)) || { id: ch.id, videos: [], next: null, complete: false };
+// kind: 'LF' = 通常動画（ショートを除く）, 'LV' = ライブ配信
+async function updateChannel(ch, kind, cap) {
+  const key = ch.id + ':' + kind;
+  const rec = (await db.get(key)) || { id: key, ch: ch.id, kind, videos: [], next: null, complete: false };
   rec.title = ch.title;
   const known = new Set(rec.videos.map(v => v[0]));
   const isNew = rec.videos.length === 0;
   const fresh = []; let token;
   // 新しい方から、既に持っている動画に当たるまで取得
   while (true) {
-    const page = await uploadsPage(ch.id, token);
+    const page = await uploadsPage(ch.id, kind, token);
     if (!page) { if (isNew) rec.complete = true; break; }
     let stop = false;
     for (const v of page.items) {
@@ -253,7 +264,7 @@ async function updateChannel(ch, cap) {
   if (!rec.complete && rec.next && rec.videos.length < cap) {
     token = rec.next;
     while (token && rec.videos.length < cap) {
-      const page = await uploadsPage(ch.id, token);
+      const page = await uploadsPage(ch.id, kind, token);
       if (!page) { token = null; break; }
       for (const v of page.items) if (!known.has(v[0])) { known.add(v[0]); rec.videos.push(v); }
       token = page.next;
@@ -262,6 +273,22 @@ async function updateChannel(ch, cap) {
     if (!token) rec.complete = true;
   }
   await db.put(rec);
+  // カテゴリ未取得の動画について、投稿者が付けたカテゴリを取得（50本で1ユニット）
+  const need = rec.videos.filter(v => v[3] === undefined);
+  for (let i = 0; i < need.length; i += 50) {
+    const chunk = need.slice(i, i + 50);
+    const r = await api('videos', {
+      part: 'snippet', id: chunk.map(v => v[0]).join(','), maxResults: 50,
+      fields: 'items(id,snippet/categoryId)'
+    });
+    const m = new Map((r.items || []).map(it => [it.id, it.snippet.categoryId]));
+    for (const v of chunk) v[3] = m.get(v[0]) || '';
+    await db.put(rec);
+  }
+}
+// ショートを含んでいた旧形式のキャッシュを削除
+async function removeOldCache() {
+  for (const k of await db.keys()) if (!String(k).includes(':')) await db.del(k);
 }
 async function pool(items, n, fn) {
   let i = 0;
@@ -280,18 +307,27 @@ async function refresh() {
     status('登録チャンネルを取得中…');
     const subs = await fetchSubs();
     state.subs = subs; LS.set('subs', subs);
+    if (!Object.keys(state.cats).length) {
+      try {
+        const r = await api('videoCategories', { part: 'snippet', regionCode: 'JP', hl: 'ja', fields: 'items(id,snippet/title)' });
+        const m = {}; for (const it of r.items || []) m[it.id] = it.snippet.title;
+        state.cats = m; LS.set('cats', m);
+      } catch {}
+    }
     const cap = state.cap || Infinity;
+    await removeOldCache();
+    const tasks = subs.flatMap(ch => [[ch, 'LF'], [ch, 'LV']]);
     let done = 0, failed = 0, fatal = null;
-    await pool(subs, 4, async ch => {
+    await pool(tasks, 4, async ([ch, kind]) => {
       if (fatal) return;
-      try { await updateChannel(ch, cap); }
+      try { await updateChannel(ch, kind, cap); }
       catch (e) {
         if (e.status === 401 || e.reason === 'quotaExceeded' || e.reason === 'dailyLimitExceeded' || e.reason === 'rateLimitExceeded') fatal = e;
         else failed++;
       }
       done++;
-      status(`動画を取得中… ${done} / ${subs.length} チャンネル`);
-      if (done % 20 === 0 && state.feed.length === 0) await buildFeed(); // 初回は途中経過も表示
+      status(`動画を取得中… ${Math.ceil(done / 2)} / ${subs.length} チャンネル`);
+      if (done % 40 === 0 && state.feed.length === 0) await buildFeed(); // 初回は途中経過も表示
     });
     LS.set('lastUpdate', Date.now());
     await buildFeed();
@@ -299,7 +335,7 @@ async function refresh() {
       if (fatal.status === 401) { state.token = null; throw new Error('ログインの有効期限が切れました。もう一度 ⟳ を押してください。'); }
       throw new Error('今日のAPI無料枠を使い切りました。取得できた分だけ表示しています（枠は日本時間の16〜17時ごろにリセットされます。続きは翌日の更新で取得されます）。');
     }
-    status(`${subs.length}チャンネル・${state.feed.length.toLocaleString()}本` + (failed ? `（${failed}チャンネルは取得できませんでした）` : ''));
+    status(`${subs.length}チャンネル・${state.feed.length.toLocaleString()}本` + (failed ? `（${failed}件の取得できませんでした）` : ''));
   } catch (e) {
     status('⚠ ' + e.message);
   } finally {
@@ -315,13 +351,23 @@ function shuffle(a) {
 async function buildFeed() {
   const recs = await db.all();
   const subIds = new Set(state.subs.map(s => s.id));
-  const chans = recs.filter(r => subIds.has(r.id) && r.videos.length);
-  const withCh = r => r.videos.map(v => [v[0], v[1], v[2], r.title]);
+  // 通常動画とライブ配信をチャンネルごとにまとめる（ショートを含む旧形式のデータは使わない）
+  const byCh = new Map();
+  for (const r of recs) {
+    if (!r.kind || !subIds.has(r.ch) || !r.videos.length) continue;
+    const c = byCh.get(r.ch) || { title: r.title, videos: [] };
+    c.videos = c.videos.concat(r.videos);
+    byCh.set(r.ch, c);
+  }
+  const chans = [...byCh.values()];
+  renderChips(chans);
+  const g = state.genre;
+  const withCh = r => (g ? r.videos.filter(v => v[3] === g) : r.videos).map(v => [v[0], v[1], v[2], r.title]);
   if (state.mode === 'recent') {
     state.feed = chans.flatMap(withCh).sort((a, b) => b[2] - a[2]);
   } else if (state.even) {
     // ランダムにチャンネルを選び、その中からランダムに1本ずつ取り出す
-    const lists = chans.map(r => shuffle(withCh(r)));
+    const lists = chans.map(r => shuffle(withCh(r))).filter(l => l.length);
     const out = [];
     while (lists.length) {
       const k = Math.floor(Math.random() * lists.length);
@@ -336,6 +382,25 @@ async function buildFeed() {
   $('#feed').innerHTML = '';
   renderMore();
   updateEmpty();
+}
+function renderChips(chans) {
+  const count = {};
+  for (const r of chans) for (const v of r.videos) if (v[3]) count[v[3]] = (count[v[3]] || 0) + 1;
+  const ids = Object.keys(count).sort((a, b) => count[b] - count[a]);
+  if (state.genre && !count[state.genre]) { state.genre = ''; LS.set('genre', ''); }
+  const el = $('#chips'); const x = el.scrollLeft;
+  el.innerHTML = '';
+  el.style.display = ids.length ? 'flex' : 'none';
+  const mk = (id, label) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (state.genre === id ? ' on' : '');
+    b.textContent = label;
+    b.onclick = () => { state.genre = id; LS.set('genre', id); buildFeed(); scrollTo(0, 0); };
+    el.append(b);
+  };
+  mk('', 'すべて');
+  for (const id of ids) mk(id, `${state.cats[id] || 'カテゴリ' + id} ${count[id].toLocaleString()}`);
+  el.scrollLeft = x;
 }
 function ago(ts) {
   const s = (Date.now() - ts) / 1000;
